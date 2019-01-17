@@ -6,12 +6,12 @@ const int LEFTSENSOR = A0;
 const int RIGHTSENSOR = A1;
 const int BOARDLED = 13;
 int DELTA = 50;
-int lastValuesLeft[5];
-int lastValuesRight[5];
-int lastColorChanges[5];
-int leftMotorState = 1;
-int rightMotorState = 1;
+int leftSensorBuffer[5];
+int rightSensorBuffer[5];
+int borderLog[5] = {0};
 int forward = 1;
+int leftMotorState = forward;
+int rightMotorState = forward;
 int reversals = 0;
 bool findMode = true;
 int currentFindCounter = 0;
@@ -39,77 +39,74 @@ void loop() {
   Serial.println(String(analogRead(LEFTSENSOR)));
   delay(500);
   */
-  if(!centerFound()){
-    digitalWrite(LEFTLED, HIGH);
-    digitalWrite(RIGHTLED, HIGH);
-    while(findMode){
+  
+  if(!centerFound()){ 
+    while(!borderLog[0]){
       findCircle();
     }
-    delay(3000);
+    delay(500);
+    
     Serial.println("found circle");
-    Serial.println(String(leftMotorState));
-    Serial.println(String(rightMotorState));
     while(!centerFound()){
-      followSecant();
+      alignWithSecant();
     }
     Serial.println("located center");
+    
     goToCenter();
     putFlag();
-    Serial.println("victory");
+    Serial.println("put flag");
   }
   
-}
-/*
-void accelerateForward(int pin){
-  digitalWrite(pin, HIGH);
-  delay(20);
-  digitalWrite(pin, LOW);
+   // alignWithSecant();
 }
 
-void accelerateBackward(int pin){
-  digitalWrite(pin, HIGH);
-  delay(10);
-  digitalWrite(pin, LOW);
-  delay(10);
-}
-
-void stopMotor(int pin){
-  digitalWrite(pin, LOW);
-}
-*/
-void putFlag(){
-  digitalWrite(LEFTLED, LOW);
-  digitalWrite(RIGHTLED, LOW);
-}
-
-void goToCenter(){
-  while(changesLeftUntilCenter){
-    followSecant();
+void findCircle() {
+  alignWithSecant();
+  if(currentFindCounter == ((targetFindCounter / 2 + 1)*100)) {
+    turnNinetyDegrees();
+    currentFindCounter = 0;
+    targetFindCounter++;
   }
+  else {
+    currentFindCounter++;
+  }  
+  delay(10);
 }
 
-bool centerFound(){
-  return reversals > 1;
-}
-
-void followSecant(){
-  pushToArray(lastValuesLeft, analogRead(LEFTSENSOR));
-  pushToArray(lastValuesRight, analogRead(RIGHTSENSOR));
+void alignWithSecant(){
+  getSensorData();
   
   adjustCourse();
   
   displayMotorState();
 }
 
-void adjustDirection(){
-  if(lastColorChanges[0] == 1 && lastColorChanges[1] == 1){
-    reversals++;
-    Serial.println("U turn");
-    turnNinetyDegrees();
+void adjustCourse(){
+  if(colorHasChanged(leftSensorBuffer) && colorHasChanged(rightSensorBuffer)){
+    drive();
+    logBorder(leftSensorBuffer);
+  }
+  else if(colorHasChanged(leftSensorBuffer)) {
+    if(rightMotorState == 0) {
+      drive();
+      logBorder(leftSensorBuffer);
+    }
+    else {
+      turnLeft();
+    }
+  }
+  else if(colorHasChanged(rightSensorBuffer)) {
+    if(leftMotorState == 0) {
+      drive();
+      logBorder(rightSensorBuffer);
+    }
+    else {
+      turnRight();
+    }
   }
 }
 
-bool colorChange(int valuesArray[5]){
+bool colorHasChanged(int valuesArray[5]){
   /*
   int difference = valuesArray[0] - valuesArray[1];
   if(abs(difference) > DELTA){
@@ -125,86 +122,30 @@ int getCategory(int value){
   else if(value < 400) return 3; //white
 }
 
-void logColorChange(int anArray[5]){
+void logBorder(int anArray[5]){
   int difference = anArray[0] - anArray[1];
   if(difference < 0){
-    pushToArray(lastColorChanges, 1); //light to dark
+    pushToBuffer(borderLog, 1); //light to dark
   }
   else{
-    pushToArray(lastColorChanges, 2); //dark to light
+    pushToBuffer(borderLog, 2); //dark to light
   }
   if(centerFound()){
     changesLeftUntilCenter--;
   }
   adjustDirection();
+  Serial.println("crossed border");
 }
 
-void adjustCourse(){
-  /*
-  if(colorChange(lastValuesRight) && !colorChange(lastValuesLeft)){
-    if(leftMotorState == 0){
-      rightMotorState = forward;
-      leftMotorState = forward;
-      logColorChange(lastValuesRight);
-      Serial.println("right LOGGED");
-    }
-    else{
-      rightMotorState = 0;
-      leftMotorState = forward;
-    }
-  }
-  else if(colorChange(lastValuesLeft) && !colorChange(lastValuesRight)){
-    if(rightMotorState == 0){
-      rightMotorState = forward;
-      leftMotorState = forward;
-      logColorChange(lastValuesLeft);
-      Serial.println("right LOGGED");
-    }
-    else{
-      rightMotorState = forward;
-      leftMotorState = 0;
-    }
-  }
-  else if(!colorChange(lastValuesRight) && !colorChange(lastValuesLeft)){
-    rightMotorState = forward;
-    leftMotorState = forward;
-  }
-  else if(colorChange(lastValuesRight) && colorChange(lastValuesLeft)){
-    rightMotorState = forward;
-    leftMotorState = forward;
-    logColorChange(lastValuesLeft);
-    Serial.println("BOTH LOGGED");
-  }
-  */
-  if(colorChange(lastValuesRight) && rightMotorState==forward) {
-    if(leftMotorState == forward) {
-      rightMotorState = 0;
-      leftMotorState = forward;
-    }
-    else {
-      rightMotorState = forward;
-      leftMotorState = forward;
-      logColorChange(lastValuesRight);
-      Serial.println("right LOGGED");
-      return;
-    }
-  }
-  if(colorChange(lastValuesLeft) && leftMotorState==forward) {
-    if(rightMotorState == forward) {
-      rightMotorState = forward;
-      leftMotorState = 0;
-    }
-    else {
-      rightMotorState = forward;
-      leftMotorState = forward;
-      logColorChange(lastValuesLeft);
-      Serial.println("left LOGGED");
-      return;
-    }
+void adjustDirection(){
+  if(borderLog[0] == 1 && borderLog[1] == 1){
+    reversals++;
+    Serial.println("U turn");
+    turnAround();
   }
 }
 
-void pushToArray(int anArray[5], int value){
+void pushToBuffer(int anArray[5], int value){
   for(int i = 4; i > 0; i--){
     anArray[i] = anArray[i - 1];
   }
@@ -225,61 +166,7 @@ void displayMotorState(){
               break;
   }
   
-  delay(500);
-}
-
-void findCircle() {
-  int leftValue = analogRead(LEFTSENSOR);
-  int rightValue = analogRead(RIGHTSENSOR);
-  /*
-  Serial.println("\nRight:");
-  Serial.println(String(rightValue));
-  Serial.println("\nLeft:");
-  Serial.println(String(leftValue));
-  */
-  pushToArray(lastValuesLeft, leftValue);
-  pushToArray(lastValuesRight, rightValue);
-  if(colorChange(lastValuesRight) && rightMotorState==forward) {
-    if(leftMotorState == forward) {
-      digitalWrite(RIGHTLED, LOW);
-      rightMotorState = 0;
-      digitalWrite(LEFTLED, HIGH);
-      leftMotorState = forward;
-    }
-    else {
-      digitalWrite(RIGHTLED, HIGH);
-      rightMotorState = forward;
-      digitalWrite(LEFTLED, HIGH);
-      leftMotorState = forward;
-      findMode = false;
-      return;
-    }
-  }
-  if(colorChange(lastValuesLeft) && leftMotorState==forward) {
-    if(rightMotorState == forward) {
-      digitalWrite(RIGHTLED, HIGH);
-      rightMotorState = forward;
-      digitalWrite(LEFTLED, LOW);
-      leftMotorState = 0;
-    }
-    else {
-      digitalWrite(RIGHTLED, HIGH);
-      rightMotorState = forward;
-      digitalWrite(LEFTLED, HIGH);
-      leftMotorState = forward;
-      findMode = false;
-      return;
-    }
-  }
-  if(currentFindCounter == ((targetFindCounter / 2 + 1)*100)) {
-    turnNinetyDegrees();
-    currentFindCounter = 0;
-    targetFindCounter++;
-  }
-  else {
-    currentFindCounter++;
-  }  
-  delay(10);
+  delay(1000);
 }
 
 void turnNinetyDegrees() {
@@ -290,4 +177,56 @@ void turnNinetyDegrees() {
     delay(50);
   }
   delay(200);
+}
+
+void turnAround() {
+  turnNinetyDegrees();
+}
+
+
+void putFlag(){
+  digitalWrite(LEFTLED, LOW);
+  digitalWrite(RIGHTLED, LOW);
+  digitalWrite(BOARDLED, HIGH);
+}
+
+void goToCenter(){
+  while(changesLeftUntilCenter){
+    alignWithSecant();
+  }
+}
+
+bool centerFound(){
+  return reversals > 1;
+}
+
+void turnLeft(){
+  rightMotorState = forward;
+  leftMotorState = 0;
+}
+
+void turnRight(){
+  rightMotorState = 0;
+  leftMotorState = forward;
+  Serial.println("turn right");
+}
+
+void drive(){
+  rightMotorState = forward;
+  leftMotorState = forward;
+  Serial.println("turn right");
+}
+
+void getSensorData(){
+  if(leftMotorState){
+    pushToBuffer(leftSensorBuffer, analogRead(LEFTSENSOR));
+    //Serial.println("\nLEFT SENSOR: ");
+    //Serial.println(String(leftSensorBuffer[0]));
+  }
+  if(rightMotorState){
+    pushToBuffer(rightSensorBuffer, analogRead(RIGHTSENSOR));
+    //Serial.println("\nRIGHT SENSOR: ");
+    //Serial.println(String(rightSensorBuffer[0]));
+  }
+  //Serial.println("\n");
 }
