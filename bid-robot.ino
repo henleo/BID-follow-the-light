@@ -1,57 +1,151 @@
-//we know this is shit code. we are also a little sorry.
-
 const int IN1 = 10;
 const int IN2 = 9;
 const int IN3 = 8;
 const int IN4 = 7;
 const int ENL = 6;
 const int ENR = 5;
-const int UTBLACK = 20;
-const int UTGRAY = 70;
-
 const int LEFTSENSOR = A1;
 const int RIGHTSENSOR = A0;
 const int BOARDLED = 13;
-int DELTA = 50;
-int leftSensorBuffer[5];
-int rightSensorBuffer[5];
-int borderLog[5] = {0};
-int forward = 1;
-int leftMotorState = forward;
-int rightMotorState = forward;
-int reversals = 0;
-bool findMode = true;
-int currentFindCounter = 0;
-int targetFindCounter = 0;
-int bordersUntilCenter = 2;
+const int COLOR_MEASURES = 50;
+const int BUFFER_SIZE = 5;
+bool CENTER_FOUND = false;
+int driveDirection = 1;
 
 class Category {
   public:
-    Category(int, int, int);
-    int min;
-    int max;
+    Category(char, int minimum = 1024, int maximum = 0, int mean = 0);
+    int minimum;
+    int maximum;
     int mean;
-    char color[1];
-} blackCategory, grayCategory, whiteCategory;
+    char color;
+    bool includes(int);
+    bool operator==(const Category*);
+    bool operator<(const Category*);
+    bool operator>(const Category*);
+};
 
-Category::Category(int min = 1024, int max = 0, int mean = 0) {
-  this->min = min;
-  this->max = max;
-  this->mean = mean;
+Category::Category(char color, int minimum, int maximum, int mean) 
+  : color(color), minimum(minimum), maximum(maximum), mean(mean) { }
+
+bool Category::includes(int value) {
+  return (value > this->minimum && value < this->maximum);
 }
+
+bool Category::operator==(const Category* other) {
+  return this->color == other->color;
+}
+
+bool Category::operator<(const Category* other) {
+  return this->mean < other->mean;
+}
+
+bool Category::operator>(const Category* other) {
+  return this->mean > other->mean;
+}
+
+
 class Motor {
+private:
+  const int _in1;
+  const int _in2;
+  const int _en;
+  int _power;
 public:
-  Motor();
-  int direction;
+  Motor(const int, const int, const int, int);
+  int sensorBuffer[BUFFER_SIZE];
   int state;
-  Category category;
+  int trend;
+  int bufferMean;
+  Category* category;
+  Category* prevCategory;
+  void evalutateSensorData(int);
+  int calculateBufferMean();
+  int getChange();
+  bool colorHasChanged();
+  void start();
+  void stop();
+};
+
+Motor::Motor(const int in1, const int in2, const int en, int power) 
+  : _in1(in1), _in2(in2), _en(en), _power(power)
+{
+  this->state = driveDirection;
 }
 
-Motor::Motor() {
-  this->direction = 1;
-  this->state = direction;
-  this->category = grayCategory;
+void Motor::evalutateSensorData(int sensorValue) {
+  for(int i = 4; i > 0; i--){
+    this->sensorBuffer[i] = this->sensorBuffer[i - 1];
+  }
+  this->sensorBuffer[0] = sensorValue;
+  this->bufferMean = this->calculateBufferMean();
+  this->trend = this->getChange();
 }
+
+int Motor::calculateBufferMean() {
+  int min = 1024, max = 0, mean = 0;
+  for(int i = 0; i < 5; i++){
+    int value = this->sensorBuffer[i];
+    if(value < min) min = value;
+    if(value > max) max = value;
+    mean += value;
+  }
+  return (int)((double) mean / 5.0);
+}
+int Motor::getChange(){
+  // Can be either -1, 0 or 1 
+  
+  if(this->bufferMean < this->category->minimum) {
+    return -1;
+  }
+  else if(this->bufferMean > this->category->maximum) {
+    return 1;
+  }
+  else {
+    return 0;
+  }
+}
+
+bool Motor::colorHasChanged(){
+  return this->trend;
+}
+
+void Motor::start(){
+  this->state = driveDirection;
+  if (driveDirection == 1) {
+    digitalWrite(this->_in1, HIGH);
+    digitalWrite(this->_in2, LOW);  
+  }
+  if (driveDirection == -1) {
+    digitalWrite(this->_in1, LOW);
+    digitalWrite(this->_in2, HIGH);  
+  }
+  analogWrite(this->_en, this->_power);
+  delay(20);
+  analogWrite(this->_en, this->_power - 20);
+  delay(20);
+  analogWrite(this->_en, this->_power  - 40);
+  delay(20);
+  analogWrite(this->_en, this->_power - 60);
+  delay(20);
+  analogWrite(this->_en, this->_power - 80);
+  delay(20);
+}
+
+void Motor::stop() {
+  this->state = 0;
+  digitalWrite(this->_in1, LOW);
+  digitalWrite(this->_in2, LOW);
+  analogWrite(this->_en, 0);
+}
+
+Category * blackCategory;
+Category * grayCategory;
+Category * whiteCategory;
+
+Motor * leftMotor;
+Motor * rightMotor;
+
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(9600);
@@ -64,13 +158,21 @@ void setup() {
   pinMode(BOARDLED, OUTPUT);
   pinMode(LEFTSENSOR, INPUT);
   pinMode(RIGHTSENSOR, INPUT);
-  
+  leftMotor = new Motor(IN1, IN2, ENL, 140);
+  rightMotor = new Motor(IN3, IN4, ENR, 120);
 }
 
 void loop() {
-  if(!centerFound()){
-    while(!centerFound()){
-      alignWithSecant();
+  if(!CENTER_FOUND){
+    getCategories();
+    while(!CENTER_FOUND){
+      evaluateSensorData();
+      updateCategories();
+      if(wentPastTarget()) {
+        CENTER_FOUND = true;
+        break;
+      }
+      adjustCourse();
     }
     
     goToCenter();
@@ -78,41 +180,137 @@ void loop() {
   }
 }
 
-void alignWithSecant(){
-  getSensorData();
-  adjustCourse();
+void getCategories() {
+  Category * firstCategory = getCategoryFromSensor();
+  driveToNextCategory();
+  Category * secondCategory = getCategoryFromSensor();
+  driveToNextCategory();
+  Category * thirdCategory = getCategoryFromSensor();
+  findLightPattern(firstCategory, secondCategory, thirdCategory);
 }
 
-void getSensorData(){
-  if(leftMotorState){
-    pushToBuffer(leftSensorBuffer, analogRead(LEFTSENSOR));
+void findLightPattern(Category* firstCategory, Category* secondCategory,Category* thirdCategory) {
+  if(firstCategory < secondCategory) {
+    if(secondCategory < thirdCategory) {
+      // black - gray - white
+      setCategories(firstCategory, secondCategory, thirdCategory);
+    }
+    else if(thirdCategory > firstCategory) {
+      // black - white - gray
+      turnAround();
+      setCategories(firstCategory, thirdCategory, secondCategory);
+    }
+    else {
+      // gray - white - black
+      setCategories(thirdCategory, firstCategory, secondCategory);
+    }
   }
-  if(rightMotorState){
-    pushToBuffer(rightSensorBuffer, analogRead(RIGHTSENSOR));
+  else {
+    if(thirdCategory < secondCategory) {
+      // white - gray - black
+      turnAround();
+      setCategories(thirdCategory, secondCategory, firstCategory);
+    }
+    else if(thirdCategory > firstCategory) {
+      // gray - black - white
+      turnAround();
+      setCategories(secondCategory, firstCategory, thirdCategory);
+    }
+    else if(firstCategory > thirdCategory) {
+      // white - black - gray
+      setCategories(secondCategory, thirdCategory, firstCategory);
+    }
+    else {
+      // SPECIAL CASE: gray - white - gray
+      CENTER_FOUND = true;
+    }
   }
+  leftMotor->category = thirdCategory;
+  rightMotor->category = thirdCategory;
+}
+
+void setCategories(Category* black, Category* gray, Category* white) {
+  blackCategory = black;
+  blackCategory->color = 'b';
+  grayCategory = gray;
+  grayCategory->color = 'g';
+  whiteCategory = white;
+  whiteCategory->color = 'w';
+}
+
+Category* getCategoryFromSensor() {
+  int min = 1024, max = 0, mean = 0;
+  for(int i = 0; i < COLOR_MEASURES; i++){
+    int value = analogRead(A0);
+    if(value < min) min = value;
+    if(value > max) max = value;
+    mean += value;
+  }
+  mean = (int)((double) mean / COLOR_MEASURES);
+  return new Category('#', min, max, mean);
+}
+
+void driveToNextCategory() {
+  while(true) {
+    evaluateSensorData();
+    if(leftMotor->colorHasChanged() && rightMotor->colorHasChanged()){
+      break;
+    }
+    adjustCourse();
+  }
+}
+
+void evaluateSensorData(){
+  if(leftMotor->state){
+    leftMotor->evalutateSensorData(analogRead(LEFTSENSOR));
+  }
+  if(rightMotor->state){
+   rightMotor->evalutateSensorData(analogRead(RIGHTSENSOR));
+  }
+}
+
+void updateCategories(){
+  leftMotor->prevCategory = leftMotor->category;
+  leftMotor->category = getCategory(leftMotor->bufferMean);
+  rightMotor->prevCategory = rightMotor->category;
+  rightMotor->category = getCategory(rightMotor->bufferMean); 
+}
+
+bool wentPastTarget() {
+  return (
+    leftMotor->colorHasChanged() &&
+    rightMotor->colorHasChanged() &&
+    leftMotor->category == grayCategory &&
+    rightMotor->category == grayCategory &&
+    leftMotor->prevCategory == whiteCategory &&
+    rightMotor->prevCategory == whiteCategory
+  );
+}
+
+Category* getCategory(int value){
+  if(blackCategory->includes(value)) return blackCategory;
+  if(grayCategory->includes(value)) return grayCategory;
+  else return whiteCategory;
 }
 
 void adjustCourse(){
-  if(colorHasChanged(leftSensorBuffer) && colorHasChanged(rightSensorBuffer)){
-    drive();
-    logBorder(leftSensorBuffer);
-  }
-  else if(!colorHasChanged(leftSensorBuffer) && !colorHasChanged(rightSensorBuffer)) {
+  if(leftMotor->colorHasChanged() && rightMotor->colorHasChanged()){
     drive();
   }
-  else if(colorHasChanged(leftSensorBuffer)) {
-    if(rightMotorState == 0) {
+  else if(!leftMotor->colorHasChanged() && !rightMotor->colorHasChanged()) {
+    drive();
+  }
+  else if(leftMotor->colorHasChanged()) {
+    if(rightMotor->state == 0) {
       drive();
-      logBorder(leftSensorBuffer);
     }
     else {
       turnLeft();
     }
   }
-  else if(colorHasChanged(rightSensorBuffer)) {
-    if(leftMotorState == 0) {
+  else if(rightMotor->colorHasChanged()) {
+    if(leftMotor->state == 0) {
       drive();
-      logBorder(rightSensorBuffer);
     }
     else {
       turnRight();
@@ -123,128 +321,48 @@ void adjustCourse(){
   delay(200);
 }
 
-bool colorHasChanged(int valuesArray[5]){
-  return getCategory() != currentCategory;
-}
-
-Category getCategory(int valuesArray[5]){
-  /*
-  int difference = valuesArray[0] - valuesArray[1];
-  if(abs(difference) > DELTA){
-    return true;
-  }
-  */
-  int min = 1024, max = 0, mean = 0;
-  for(int i = 0; i < 0; i++){
-    value = valuesArray[i];
-    if(value < min) min = value;
-    if(value > max) max = value;
-    mean += value;
-  }
-  mean = (int)((double) mean / 5.0)
-  newData = getCategory(mean);
-
-  if(mean < blackCategory.max) {
-    return blackCategory;
-  }
-  else if(mean < grayCategory.max) {
-    return grayCategory;
-  }
-  else {
-    return whiteCategory;
-  }
-}
-
-int getCategory(int value){
-  if(value < ) return 1; //black
-  else if(value < UTGRAY) return 2; //grey
-  else return 3; //white
-}
-
-void logBorder(int anArray[5]){
-  int difference = anArray[0] - anArray[1];
-  if(difference < 0){
-    pushToBuffer(borderLog, 1); //light to dark
-  }
-  else{
-    pushToBuffer(borderLog, 2); //dark to light
-  }
-  if(centerFound()){
-    bordersUntilCenter--;
-  }
-  adjustDirection();
-  //Serial.println("crossed border");
-}
-
-void adjustDirection(){
-  if(borderLog[0] == 1 && borderLog[1] == 1){
-    reversals++;
-    //Serial.println("U turn");
-    turnAround();
-  }
-}
-
-void pushToBuffer(int anArray[5], int value){
-  for(int i = 4; i > 0; i--){
-    anArray[i] = anArray[i - 1];
-  }
-  anArray[0] = value;
-}
-
 void turnAround() {
-  forward = -1;
-  if(leftMotorState) {
-    leftMotorState = forward;
-    startLeftMotor();
+  driveDirection = -1;
+  if(leftMotor->state) {
+    leftMotor->start();
   }
-  if(rightMotorState){
-    rightMotorState = forward;
-    startRightMotor();
+  if(rightMotor->state){
+    rightMotor->start();
   }
 }
 
 
 void putFlag(){
-  stopLeftMotor();
-  stopRightMotor();
+  leftMotor->stop();
+  rightMotor->stop();
   digitalWrite(BOARDLED, HIGH);
 }
 
 void goToCenter(){
-  while(bordersUntilCenter){
-    alignWithSecant();
-  }
-}
-
-bool centerFound(){
-  return reversals > 1;
+  turnAround();
+  driveToNextCategory();
 }
 
 void turnLeft(){
-  rightMotorState = forward;
-  startRightMotor();
-  leftMotorState = 0;
-  stopLeftMotor();
+  leftMotor->stop();
+  rightMotor->start();
 }
 
 void turnRight(){
-  rightMotorState = 0;
-  stopRightMotor();
-  leftMotorState = forward;
-  startLeftMotor();
-  Serial.println("turn right");
+  rightMotor->stop();
+  leftMotor->start();
 }
 
 void drive(){
-  rightMotorState = forward;
-  leftMotorState = forward;
-  if (forward == 1) {
+  rightMotor->state = driveDirection;
+  leftMotor->state = driveDirection;
+  if (driveDirection == 1) {
     digitalWrite(IN1, HIGH);
     digitalWrite(IN2, LOW); 
     digitalWrite(IN3, HIGH);
     digitalWrite(IN4, LOW);  
   }
-  if (forward == -1) {
+  if (driveDirection == -1) {
     digitalWrite(IN1, LOW);
     digitalWrite(IN2, HIGH);
     digitalWrite(IN3, LOW);
@@ -265,86 +383,4 @@ void drive(){
   analogWrite(ENR, 20);
   analogWrite(ENL, 40);
   delay(20);
-  
-  Serial.println("drive");
-  
 }
-
-void startLeftMotor(){
-  if (forward == 1) {
-    digitalWrite(IN1, HIGH);
-    digitalWrite(IN2, LOW);  
-  }
-  if (forward == -1) {
-    digitalWrite(IN1, LOW);
-    digitalWrite(IN2, HIGH);  
-  }
-  analogWrite(ENL, 140);
-  delay(20);
-  analogWrite(ENL, 120);
-  delay(20);
-  analogWrite(ENL, 100);
-  delay(20);
-  analogWrite(ENL, 80);
-  delay(20);
-  analogWrite(ENL, 60);
-  delay(20);
-}
-
-void stopLeftMotor() {
-  digitalWrite(IN1, LOW);
-  digitalWrite(IN2, LOW);
-  analogWrite(ENL, 0);
-}
-
-void startRightMotor(){
-  if (forward == 1) {
-    digitalWrite(IN3, HIGH);
-    digitalWrite(IN4, LOW);  
-  }
-  if (forward == -1) {
-    digitalWrite(IN3, LOW);
-    digitalWrite(IN4, HIGH);  
-  }
-  analogWrite(ENR, 120);
-  delay(20);
-  analogWrite(ENR, 100);
-  delay(20);
-  analogWrite(ENR, 80);
-  delay(20);
-  analogWrite(ENR, 60);
-  delay(20);
-  analogWrite(ENR, 40);
-  delay(20);
-}
-
-void stopRightMotor() {
-  digitalWrite(IN3, LOW);
-  digitalWrite(IN4, LOW);
-  analogWrite(ENR, 0);
-}
-
-
-/* NOT USED
-
-void turnNinetyDegrees() {
-  startLeftMotor();
-  stopRightMotor();
-  delay(500);
-  startLeftMotor();
-  startRightMotor();
-}
-
-void findCircle() {
-  alignWithSecant();
-  if(currentFindCounter == ((targetFindCounter / 2 + 1)*100)) {
-    turnNinetyDegrees();
-    currentFindCounter = 0;
-    targetFindCounter++;
-  }
-  else {
-    currentFindCounter++;
-  }  
-  delay(10);
-}
-*/
