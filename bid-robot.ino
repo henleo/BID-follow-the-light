@@ -57,11 +57,17 @@ void loop() {
 
 void getCategories() {
   Category * firstCategory = getCategoryFromSensor();
+  leftMotor->category = firstCategory;
+  rightMotor->category = firstCategory;
   driveToNextCategory();
   Category * secondCategory = getCategoryFromSensor();
+  leftMotor->category = secondCategory;
+  rightMotor->category = secondCategory;
   driveToNextCategory();
   Category * thirdCategory = getCategoryFromSensor();
   findLightPattern(firstCategory, secondCategory, thirdCategory);
+  leftMotor->category = thirdCategory;
+  rightMotor->category = thirdCategory;
 }
 
 void findLightPattern(Category* firstCategory, Category* secondCategory,Category* thirdCategory) {
@@ -100,8 +106,6 @@ void findLightPattern(Category* firstCategory, Category* secondCategory,Category
       CENTER_FOUND = true;
     }
   }
-  leftMotor->category = thirdCategory;
-  rightMotor->category = thirdCategory;
 }
 
 void setCategories(Category* black, Category* gray, Category* white) {
