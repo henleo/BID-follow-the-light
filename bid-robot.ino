@@ -8,7 +8,7 @@ const int LEFTSENSOR = A1;
 const int RIGHTSENSOR = A0;
 const int BOARDLED = 13;
 const int COLOR_MEASURES = 50;
-const int BUFFER_SIZE = 5;
+const int BUFFER_SIZE = 4;
 bool CENTER_FOUND = false;
 int driveDirection = 1;
 
@@ -74,7 +74,7 @@ Motor::Motor(const int in1, const int in2, const int en, int power)
 }
 
 void Motor::evalutateSensorData(int sensorValue) {
-  for(int i = 4; i > 0; i--){
+  for(int i = BUFFER_SIZE -1; i > 0; i--){
     this->sensorBuffer[i] = this->sensorBuffer[i - 1];
   }
   this->sensorBuffer[0] = sensorValue;
@@ -84,13 +84,13 @@ void Motor::evalutateSensorData(int sensorValue) {
 
 int Motor::calculateBufferMean() {
   int min = 1024, max = 0, mean = 0;
-  for(int i = 0; i < 5; i++){
+  for(int i = 0; i < BUFFER_SIZE; i++){
     int value = this->sensorBuffer[i];
     if(value < min) min = value;
     if(value > max) max = value;
     mean += value;
   }
-  return (int)((double) mean / 5.0);
+  return (int)((double) mean / BUFFER_SIZE);
 }
 int Motor::getChange(){
   // Can be either -1, 0 or 1 
