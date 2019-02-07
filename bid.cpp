@@ -1,5 +1,6 @@
 #include "Arduino.h"
 #include "bid.h" 
+const int CHANGE_THRESHOLD = 3;
 
 Category::Category(char color, int minimum, int maximum, int mean) 
   : color(color), minimum(minimum), maximum(maximum), mean(mean) { }
@@ -8,22 +9,36 @@ bool Category::includes(int value) {
   return (value > this->minimum && value < this->maximum);
 }
 
-bool Category::operator==(const Category* other) {
-  return this->color == other->color;
+bool Category::operator==(const Category other) {
+  return this->color == other.color;
 }
 
-bool Category::operator<(const Category* other) {
-  return this->mean < other->mean;
+bool Category::operator<(const Category other) {
+  return this->mean < other.mean;
 }
 
-bool Category::operator>(const Category* other) {
-  return this->mean > other->mean;
+bool Category::operator>(const Category other) {
+  return this->mean > other.mean;
 }
 
 Motor::Motor(const int in1, const int in2, const int en, int power, int driveDirection, const int bufferSize)
   : _in1(in1), _in2(in2), _en(en), _power(power), driveDirection(driveDirection), _bufferSize(bufferSize)
 {
-  this->state = this->driveDirection;
+  this->categories = NULL;
+  this->state = 0;
+  this->trend = 0;
+  this->sensorBuffer = new int[bufferSize];
+}
+
+void Motor::changeCategory(Category* category) {
+  this->category = category;
+  this->flushBuffer(category->mean);
+}
+
+void Motor::flushBuffer(int value) {
+  for(int i = 0; i < this->_bufferSize; i++) {
+    this->sensorBuffer[i] = value;
+  }
 }
 
 void Motor::evalutateSensorData(int sensorValue) {
@@ -48,10 +63,10 @@ int Motor::calculateBufferMean() {
 int Motor::getChange(){
   // Can be either -1, 0 or 1 
   
-  if(this->bufferMean < this->category->minimum) {
+  if(this->bufferMean < (this->category->minimum - CHANGE_THRESHOLD)) {
     return -1;
   }
-  else if(this->bufferMean > this->category->maximum) {
+  else if(this->bufferMean > (this->category->maximum + CHANGE_THRESHOLD)) {
     return 1;
   }
   else {

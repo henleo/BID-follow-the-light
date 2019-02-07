@@ -6,9 +6,9 @@ class Category {
     int mean;
     char color;
     bool includes(int);
-    bool operator==(const Category*);
-    bool operator<(const Category*);
-    bool operator>(const Category*);
+    bool operator==(const Category);
+    bool operator<(const Category);
+    bool operator>(const Category);
 };
 
 class Motor {
@@ -21,6 +21,7 @@ private:
 public:
   Motor(const int in1, const int in2, const int en, int power, int driveDirection, const int bufferSize);
   int driveDirection;
+  Category** categories;
   int * sensorBuffer;
   int state;
   int trend;
@@ -28,6 +29,8 @@ public:
   Category* category;
   Category* prevCategory;
   void evalutateSensorData(int);
+  void changeCategory(Category*);
+  void flushBuffer(int);
   int calculateBufferMean();
   int getChange();
   bool colorHasChanged();
