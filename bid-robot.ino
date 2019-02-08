@@ -35,14 +35,15 @@ void setup() {
   pinMode(BOARDLED, OUTPUT);
   pinMode(LEFTSENSOR, INPUT);
   pinMode(RIGHTSENSOR, INPUT);
-  leftMotor = new Motor(IN1, IN2, ENL, 120, driveDirection, BUFFER_SIZE);
-  rightMotor = new Motor(IN3, IN4, ENR, 120, driveDirection, BUFFER_SIZE);
+  leftMotor = new Motor(IN1, IN2, ENL, 140, driveDirection, BUFFER_SIZE);
+  rightMotor = new Motor(IN3, IN4, ENR, 130, driveDirection, BUFFER_SIZE);
 }
 
 void loop() {
   if(!CENTER_FOUND){
     getCategories();
     drive();
+    blinkDebug(10);
     while(!CENTER_FOUND){
       evaluateSensorData();
       updateCategories();
@@ -232,7 +233,7 @@ void adjustCourse(){
   }
   analogWrite(ENR, LOW);
   analogWrite(ENL, LOW);
-  delay(120);
+  delay(500);
 }
 
 void turnAround() {
@@ -287,21 +288,33 @@ void drive(){
     digitalWrite(IN3, LOW);
     digitalWrite(IN4, HIGH);  
   }
-  analogWrite(ENR, 100);
+  analogWrite(ENR, 175);
+  analogWrite(ENL, 180);
+  delay(10);
+  analogWrite(ENR, 155);
+  analogWrite(ENL, 160);
+  delay(10);
+  analogWrite(ENR, 135);
+  analogWrite(ENL, 140);
+  delay(10);
+  analogWrite(ENR, 115);
   analogWrite(ENL, 120);
   delay(20);
-  analogWrite(ENR, 80);
+  analogWrite(ENR, 95);
   analogWrite(ENL, 100);
   delay(20);
-  analogWrite(ENR, 60);
+  analogWrite(ENR, 75);
   analogWrite(ENL, 80);
-  delay(20);
-  analogWrite(ENR, 40);
+  delay(10);
+  analogWrite(ENR, 55);
   analogWrite(ENL, 60);
-  delay(20);
-  analogWrite(ENR, 20);
+  delay(10);
+  analogWrite(ENR, 35);
   analogWrite(ENL, 40);
-  delay(20);
+  delay(10);
+  analogWrite(ENR, 15);
+  analogWrite(ENL, 20);
+  delay(10);
 }
 
 void stopMotors() {
@@ -317,4 +330,3 @@ void blinkDebug(int times) {
     delay(200);
   }
 }
-

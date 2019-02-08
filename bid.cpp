@@ -1,6 +1,6 @@
 #include "Arduino.h"
 #include "bid.h" 
-const int CHANGE_THRESHOLD = 3;
+const int CHANGE_THRESHOLD = 0;
 
 Category::Category(char color, int minimum, int maximum, int mean) 
   : color(color), minimum(minimum), maximum(maximum), mean(mean) { }

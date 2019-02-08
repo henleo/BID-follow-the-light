@@ -17,12 +17,12 @@ private:
   const int _in1;
   const int _in2;
   const int _en;
-  int _power;
 public:
   Motor(const int in1, const int in2, const int en, int power, int driveDirection, const int bufferSize);
   int driveDirection;
   Category** categories;
   int * sensorBuffer;
+  int _power;
   int state;
   int trend;
   int bufferMean;
